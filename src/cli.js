@@ -17,6 +17,7 @@ import {
 
 import * as jira from "./jira.js";
 import * as twg from "./twg.js";
+import { getAgentCli, checkCliInstalled, runAgentPrompt } from "./agentRunner.js";
 
 const program = new Command();
 
@@ -96,8 +97,47 @@ function printSummarizePrompt(id, log = console.error) {
   );
 }
 
+// If the session's agent has an installed CLI, run it right here instead of
+// making the user paste the prompt by hand. Returns { ran: false } when there's
+// no known/installed CLI for this agent, so callers fall back to the manual flow.
+function tryAutoSummarize(id, agentName) {
+  const cli = getAgentCli(agentName);
+
+  if (!cli) {
+    return { ran: false };
+  }
+
+  const check = checkCliInstalled(cli);
+
+  if (!check.installed) {
+    console.error(`${cli.label} CLI not runnable on PATH (${check.reason}) - falling back to manual paste.`);
+    return { ran: false };
+  }
+
+  console.error(`Detected ${cli.label} CLI - running it to summarize this session automatically...`);
+
+  const prompt = buildSummarizePrompt(id);
+  const result = runAgentPrompt(cli, prompt, process.cwd());
+
+  return { ran: true, cliLabel: cli.label, ...result };
+}
+
 function requireKnowledge(session, id) {
   if (!session.knowledge) {
+    const auto = tryAutoSummarize(id, session.agent);
+
+    if (auto.ran && auto.success) {
+      const updated = loadSession(id);
+
+      if (updated && updated.knowledge) {
+        return updated.knowledge;
+      }
+
+      console.error(`${auto.cliLabel} ran but didn't add a "knowledge" field to the session.`);
+    } else if (auto.ran) {
+      console.error(`Could not run ${auto.cliLabel} automatically: ${auto.reason}`);
+    }
+
     console.error("This session hasn't been summarized yet. Paste this to Claude Code:");
     console.error("");
     printSummarizePrompt(id);
@@ -139,12 +179,31 @@ program
   .action(async () => {
     const session = await stopSession();
 
-    if (session) {
-      console.log("Next: paste this to Claude Code, then run 'agent-knowledge push'.");
-      console.log("");
-      printSummarizePrompt(session.id, console.log);
-      console.log("");
+    if (!session) {
+      return;
     }
+
+    const auto = tryAutoSummarize(session.id, session.agent);
+
+    if (auto.ran && auto.success) {
+      const updated = loadSession(session.id);
+
+      if (updated && updated.knowledge) {
+        console.log(`Knowledge summary generated automatically via ${auto.cliLabel}.`);
+        console.log("Next: run 'agent-knowledge push'.");
+        return;
+      }
+
+      console.log(`${auto.cliLabel} ran but didn't add a "knowledge" field - falling back to manual paste.`);
+    } else if (auto.ran) {
+      console.log(`Could not run ${auto.cliLabel} automatically: ${auto.reason}`);
+      console.log("Falling back to manual paste.");
+    }
+
+    console.log("Next: paste this to Claude Code, then run 'agent-knowledge push'.");
+    console.log("");
+    printSummarizePrompt(session.id, console.log);
+    console.log("");
   });
 
 program
