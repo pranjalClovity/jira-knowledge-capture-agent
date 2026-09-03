@@ -1,0 +1,26 @@
+{
+  "name": "agent-knowledge",
+  "version": "1.0.0",
+  "description": "Capture AI coding session knowledge and sync it to Jira",
+  "main": "src/cli.js",
+  "bin": {
+    "agent-knowledge": "./src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "dev": "nodemon --exec node src/cli.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "axios": "^1.20.0",
+    "commander": "^15.0.0",
+    "dotenv": "^17.4.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
